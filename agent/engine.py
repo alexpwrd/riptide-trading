@@ -294,13 +294,53 @@ def trader_loop():
     while running:
         start = time.time()
         try:
+            # Auto-cleanup stale orders to prevent order hoarding
+            try:
+                orders_raw = kraken_cmd("paper orders -o json")
+                orders_data = json.loads(orders_raw)
+                open_orders = orders_data.get("open_orders", []) if isinstance(orders_data, dict) else orders_data if isinstance(orders_data, list) else []
+                order_count = len(open_orders)
+                if order_count > 15:
+                    # Cancel orders older than 2 hours
+                    from datetime import timezone
+                    now = datetime.now(timezone.utc)
+                    stale = []
+                    for o in open_orders:
+                        t = o.get("created_at", "")
+                        if t:
+                            try:
+                                created = datetime.fromisoformat(t)
+                                age_hours = (now - created).total_seconds() / 3600
+                                if age_hours > 2:
+                                    stale.append(o.get("id", ""))
+                            except: pass
+                    if stale:
+                        # Cancel stale orders individually
+                        cancelled = 0
+                        for oid in stale[:50]:  # max 50 per cycle
+                            result = kraken_cmd(f"paper cancel {oid} -o json")
+                            if "cancel" in result.lower():
+                                cancelled += 1
+                        if cancelled > 0:
+                            ts_now = datetime.now().strftime("%H:%M:%S")
+                            print(f"  [TRADER {ts_now}] Cleaned up {cancelled} stale orders (>{2}h old, {order_count} total)")
+                    elif order_count > 20:
+                        # Too many recent orders — cancel oldest batch
+                        oldest = sorted(open_orders, key=lambda o: o.get("created_at", ""))[:order_count - 15]
+                        for o in oldest:
+                            kraken_cmd(f"paper cancel {o.get('id', '')} -o json")
+                        ts_now = datetime.now().strftime("%H:%M:%S")
+                        print(f"  [TRADER {ts_now}] Trimmed {len(oldest)} excess orders (keeping 15)")
+            except Exception as e:
+                pass  # Never crash the engine over cleanup
+
             # Read pre-computed market data
             market = {}
             mkt_file = DATA_DIR / "market.json"
             if mkt_file.exists():
                 try: market = json.loads(mkt_file.read_text())
                 except: pass
-            
+
             # Read portfolio
             status_data = json.loads(kraken_cmd("paper status -o json"))
             bal = json.loads(kraken_cmd("paper balance -o json"))
@@ -405,6 +445,7 @@ Max position: {strategy.get('max_position_pct', 40)}% of portfolio."""
                             ta = "BUY" if last_success["tool"] == "buy" else "SELL"
                             tam = last_success["args"].get("amount", 0) * last_success["args"].get("price", 100)
                             erc8004_log_trade(tp, ta, tam)
+                            time.sleep(2)  # Let nonce settle before next TX
                         # Post checkpoint every 3rd cycle to conserve gas (~0.001 ETH/checkpoint)
                         _erc8004_cycle_count = getattr(sys.modules[__name__], '_erc8004_cycle_count', 0) + 1
                         sys.modules[__name__]._erc8004_cycle_count = _erc8004_cycle_count
