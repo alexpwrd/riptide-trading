@@ -132,6 +132,11 @@ def get_contracts():
 
 
 def send_tx(tx, private_key):
+    # Check if on-chain submissions are paused (gas exhausted)
+    pause_file = DATA_DIR / "erc8004_paused"
+    if pause_file.exists():
+        print("  [ERC-8004] PAUSED — gas too low, skipping TX")
+        return None
     with _tx_lock:
         # Re-read nonce under lock to avoid collisions from concurrent threads
         op = Web3.to_checksum_address(OPERATOR_ADDR)
