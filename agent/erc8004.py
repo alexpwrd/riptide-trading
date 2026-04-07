@@ -134,11 +134,14 @@ def get_contracts():
 def send_tx(tx, private_key):
     with _tx_lock:
         # Re-read nonce under lock to avoid collisions from concurrent threads
-        tx["nonce"] = w3.eth.get_transaction_count(Web3.to_checksum_address(OPERATOR_ADDR))
+        op = Web3.to_checksum_address(OPERATOR_ADDR)
+        tx["nonce"] = w3.eth.get_transaction_count(op, "pending")
+        # Bump gas price to avoid underpriced replacements on slow Sepolia
+        tx["gasPrice"] = max(tx.get("gasPrice", 0), w3.eth.gas_price * 2)
         signed = w3.eth.account.sign_transaction(tx, private_key=private_key)
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
         print("  TX sent: " + tx_hash.hex())
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=300)
     print("  TX mined in block " + str(receipt.blockNumber) + ", gas used: " + str(receipt.gasUsed))
     if receipt.status != 1:
         print("  TX REVERTED!")
