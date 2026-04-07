@@ -241,15 +241,6 @@ def trader_loop():
             amount = args.get("amount", 0)
             otype = args.get("order_type", "market")
             price = args.get("price")
-            # Cash floor: max buy = 20% of portfolio per trade
-            try:
-                st_check = json.loads(kraken_cmd("paper status -o json"))
-                total_val = st_check.get("current_value", 10000000)
-                max_buy = total_val * 0.20  # 20% max per trade
-                est_cost = amount * (price if price else 100)  # rough estimate
-                if est_cost > max_buy:
-                    return json.dumps({"error": f"Trade too large: ${est_cost:,.0f} exceeds 20% limit (${max_buy:,.0f}). Reduce size."})
-            except: pass
             # Record entry price
             try:
                 t = json.loads(kraken_cmd(f"ticker {pair} -o json"))
