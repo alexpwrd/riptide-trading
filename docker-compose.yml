@@ -1,0 +1,43 @@
+services:
+  clawdtrader:
+    build: .
+    container_name: clawdtrader
+    env_file:
+      - .env
+    volumes:
+      - ./agent:/app/agent
+      - ./data:/app/data
+      - ./contracts:/app/contracts
+      - ./models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    shm_size: '256gb'
+    network_mode: host
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama-models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    shm_size: '256gb'
+
+volumes:
+  ollama-models:

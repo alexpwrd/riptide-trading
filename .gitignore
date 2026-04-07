@@ -1,0 +1,12 @@
+.env
+*.key
+*.pem
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+data/
+.claude/
+.playwright-mcp/
+*.log
+node_modules/
