@@ -399,15 +399,18 @@ Max position: {strategy.get('max_position_pct', 40)}% of portfolio."""
                             cycle_pair = last_trade["args"].get("pair", "")
                             cycle_amount = last_trade["args"].get("amount", 0)
                             cycle_price = last_trade["args"].get("price", 0)
-                        # Submit trade intent for last successful trade
+                        # Submit trade intent for last successful trade (only on actual trades, not holds)
                         if last_success:
                             tp = last_success["args"].get("pair", "")
                             ta = "BUY" if last_success["tool"] == "buy" else "SELL"
                             tam = last_success["args"].get("amount", 0) * last_success["args"].get("price", 100)
                             erc8004_log_trade(tp, ta, tam)
-                        # Then post checkpoint (sequential, no nonce collision)
-                        score = 80 if trades_made else 70
-                        erc8004_log_checkpoint(summary[:200], cycle_action, cycle_pair, cycle_amount, cycle_price, score)
+                        # Post checkpoint every 3rd cycle to conserve gas (~0.001 ETH/checkpoint)
+                        _erc8004_cycle_count = getattr(sys.modules[__name__], '_erc8004_cycle_count', 0) + 1
+                        sys.modules[__name__]._erc8004_cycle_count = _erc8004_cycle_count
+                        if trades_made or _erc8004_cycle_count % 3 == 0:
+                            score = 80 if trades_made else 70
+                            erc8004_log_checkpoint(summary[:200], cycle_action, cycle_pair, cycle_amount, cycle_price, score)
                         if trades_made:
                             log_action({"agent": "trader", "trades": trades_made, "summary": summary[:300]})
                             post_discord(f"[TRADER] {len(trades_made)} trades: {summary[:300]}")
