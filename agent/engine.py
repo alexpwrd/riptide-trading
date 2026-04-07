@@ -364,22 +364,41 @@ def trader_loop():
             sentiment = market.get("sentiment", "?")
             movers_text = "\n".join(f"  {m['pair']}: {m['change']:+.1f}% range:{m['range']:.1f}% pos:{m['range_pos']:.0f}%" for m in movers)
             
+            # Count open orders so the LLM knows about them
+            open_order_count = 0
+            open_order_cash = 0
+            try:
+                oo = json.loads(kraken_cmd("paper orders -o json"))
+                open_orders_list = oo.get("open_orders", [])
+                open_order_count = len(open_orders_list)
+                open_order_cash = sum(o.get("reserved_amount", 0) for o in open_orders_list if o.get("reserved_asset") == "USD")
+            except: pass
+
             prompt = f"""Portfolio: ${status_data.get('current_value',0):,.0f} ({status_data.get('unrealized_pnl_pct',0):+.2f}%)
-Cash: ${cash:,.0f}
+Cash available: ${cash:,.0f}
+Cash locked in {open_order_count} unfilled limit orders: ${open_order_cash:,.0f}
 Holdings:
 {chr(10).join(holdings) if holdings else '  None'}
 
 Market ({sentiment}, {market.get('positive',0)}/{market.get('total',0)} green):
 {movers_text}
 
-Strategy: {strategy.get('entry_notes', 'Trade with conviction.')}
+Decide what to trade NOW. Use get_ohlc or get_orderbook if you need data. Call done when finished."""
 
-Decide: buy, sell, or hold. Use get_ohlc or get_orderbook if you need more data on a specific pair. Be decisive. Call done when finished."""
+            system = f"""You are Riptide, an autonomous crypto trading agent managing $10M. IMPORTANT: Use USD pairs (BTCUSD, ETHUSD, SOLUSD, AVAXUSD, etc.), NOT USDT pairs. Zero trading fees. A sentinel bot handles stop-losses at -2.5% and take-profits at +3% automatically — you don't need to worry about those.
 
-            system = f"""You are a fast crypto trader with $10M. IMPORTANT: Use USD pairs (BTCUSD, ETHUSD, SOLUSD), NOT USDT pairs. Zero fees. Sentinel handles stops at -2.5% and take-profit at +3%.
-Your job: find the best opportunity RIGHT NOW and trade it. One position at a time is fine. Don't overthink — act.
-Rules: {strategy.get('exit_notes', 'Stop at -2.5%. Take profit at +3%.')}
-Max position: {strategy.get('max_position_pct', 40)}% of portfolio."""
+YOUR TRADING PHILOSOPHY:
+- You are a momentum trader. Buy what's moving up, sell what's moving down.
+- USE MARKET ORDERS to buy and sell. Market orders execute instantly and deploy your capital.
+- AVOID LIMIT ORDERS. Your past limit orders sat unfilled for days and locked up millions in dead cash. Limit orders are only acceptable for very large positions where you need to minimize slippage.
+- If you have significant available cash (>$500K), you MUST deploy it into positions this cycle. Cash earns nothing.
+- Concentrate your capital in 2-3 high-conviction positions. Don't spread across 10 tiny bets.
+- When you want to rebalance, sell the weak position at market FIRST, then immediately buy the strong one at market.
+
+RULES:
+- Max single position: {strategy.get('max_position_pct', 40)}% of portfolio
+- {strategy.get('exit_notes', 'Stop at -2.5%. Take profit at +3%.')}
+- Trust your analysis. Act decisively. Every cycle with idle cash is a cycle you're losing."""
 
             messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
             
